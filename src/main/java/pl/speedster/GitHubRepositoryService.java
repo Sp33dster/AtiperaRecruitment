@@ -5,6 +5,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 
 @Service
 class GitHubRepositoryService {
@@ -12,21 +15,34 @@ class GitHubRepositoryService {
     private static final Logger log = LoggerFactory.getLogger(GitHubRepositoryService.class);
 
     private final GitHubClient gitHubClient;
+    private final ExecutorService executor;
 
-    GitHubRepositoryService(final GitHubClient gitHubClient) {
+    GitHubRepositoryService(final GitHubClient gitHubClient, final  ExecutorService virtualThreadExecutor) {
         this.gitHubClient = gitHubClient;
+        this.executor = virtualThreadExecutor;
     }
 
     List<RepositoryResponse> getUserRepositories(final String username) {
         log.info("Fetching repositories for username={}", username);
 
-        return gitHubClient.getUserRepos(username).stream()
+        final var nonForkRepos = gitHubClient.getUserRepos(username).stream()
                 .filter(repo -> !repo.fork())
-                .map(repo -> toRepositoryResponse(username, repo))
+                .toList();
+
+        if (nonForkRepos.isEmpty()) {
+            return List.of();
+        }
+
+        final var repositoryResponseTasks = nonForkRepos.stream()
+                .map(repo -> executor.submit(() -> toRepositoryResponse(repo)))
+                .toList();
+
+        return repositoryResponseTasks.stream()
+                .map(GitHubRepositoryService::uncheckedGet)
                 .toList();
     }
 
-    private RepositoryResponse toRepositoryResponse(final String username, final GitHubRepo repo) {
+    private RepositoryResponse toRepositoryResponse(final GitHubRepo repo) {
         final var ownerLogin = repo.owner().login();
         final var branches = fetchBranches(ownerLogin, repo.name());
 
@@ -37,5 +53,16 @@ class GitHubRepositoryService {
         return gitHubClient.getRepoBranches(ownerLogin, repoName).stream()
                 .map(b -> new BranchResponse(b.name(), b.commit().sha()))
                 .toList();
+    }
+
+    private static <T> T uncheckedGet(final Future<T> future) {
+        try {
+            return future.get();
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (final ExecutionException e) {
+            throw new RuntimeException(e.getCause());
+        }
     }
 }

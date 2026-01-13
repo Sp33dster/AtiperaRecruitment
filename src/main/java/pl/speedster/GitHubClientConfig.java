@@ -9,7 +9,9 @@ import org.springframework.web.client.RestClient;
 class GitHubClientConfig {
 
     @Bean
-    RestClient gitHubRestClient(@Value("${github.base-url:https://api.github.com}") String baseUrl) {
+    RestClient gitHubRestClient(
+            @Value("${github.base-url:https://api.github.com}") String baseUrl) {
+
         return RestClient.builder()
                 .baseUrl(baseUrl)
                 .defaultHeader("Accept", "application/vnd.github+json")

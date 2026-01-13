@@ -11,11 +11,16 @@ for a given GitHub user together with their branches and last commit SHAs.
 
 - Fetches public repositories for a GitHub user
 - Filters out forked repositories
+- Branch data for multiple repositories is fetched in parallel
 - For each repository returns:
   - repository name
   - owner login
   - branches with last commit SHA
 - Returns HTTP 404 when the GitHub user does not exist
+- Integration tests verify:
+  - correct business logic
+  - number of outgoing HTTP calls
+  - execution time under simulated network latency
 
 ---
 
@@ -28,6 +33,7 @@ for a given GitHub user together with their branches and last commit SHAs.
 - WireMock
 - WebTestClient
 - JSONAssert
+- Apache Commons Lang
 
 ---
 
@@ -36,7 +42,7 @@ for a given GitHub user together with their branches and last commit SHAs.
 The application follows a simple **Controller / Service / Client** structure:
 
 - **Controller** – exposes the REST endpoint and returns typed responses
-- **Service** – contains business logic (filtering forks, mapping data)
+- **Service** – contains business logic (filtering forks, mapping data, parallel fetching of branch data)
 - **Client** – communicates with the external GitHub REST API using `RestClient`
 
 ---
@@ -70,6 +76,18 @@ The application follows a simple **Controller / Service / Client** structure:
   "message": "GitHub user not found: username"
 }
 ```
+---
+
+## Parallel Processing
+
+For non-fork repositories, branch information is fetched concurrently to reduce overall response time.
+
+This allows the application to:
+- perform 1 HTTP call to fetch repositories
+- perform N parallel HTTP calls to fetch branches (for non-fork repositories)
+- significantly reduce total processing time when multiple repositories are present
+
+The correctness and performance characteristics of this behavior are verified in integration tests.
 
 ---
 
